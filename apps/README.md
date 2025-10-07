@@ -45,6 +45,7 @@ Define the following in `.env`:
 | `DOCKER_CLI` | Command used to invoke Docker | `docker` |
 | `DOCKER_COMPOSE_COMMAND` | Compose executable | `docker compose` |
 | `DOCKER_LOG_WS_PREFIX` | WebSocket base path for logs | `/ws` |
+| `DOCKER_STOP_TIMEOUT_SEC` | Seconds Docker waits before force-killing on fallback `docker stop` | `30` |
 
 ## Running the Service
 
@@ -97,9 +98,10 @@ Ensure each compose project sets `container_name` (or equivalent) to match the `
 
 1. Update the docker record with the stop command (e.g., `stop` for Minecraft).
 2. `POST /api/dockers/:id/stop` sends the command via `docker exec -i <name> sh -c 'cat > /proc/1/fd/0'`.
-3. The service waits for the container to report `State.Running = false`, then executes `docker compose down`.
+3. The service waits for the container to report `State.Running = false`. If it remains up, the service falls back to `docker stop --time <DOCKER_STOP_TIMEOUT_SEC>` and waits again.
+4. Once the container is down the service executes `docker compose down`.
 
-If the container does not stop within 15 seconds, the API responds with an error.
+If the container is still running after the fallback, the API responds with an error.
 
 ## Prisma
 
@@ -117,4 +119,3 @@ If the container does not stop within 15 seconds, the API responds with an error
 ## Testing
 
 Test suite is not yet implemented. Use `npm run build` to perform a type-check. Consider adding integration tests for docker interactions with mocks or a controlled environment.
-

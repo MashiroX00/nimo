@@ -222,3 +222,8 @@ export const tailContainerLogs = (
   child.on('error', () => onExit(null));
   return child;
 };
+
+export const stopContainer = async (containerName: string): Promise<CommandResult> => {
+  const args = ['stop', '--time', String(env.dockerStopTimeoutSec), containerName];
+  return execDocker(args);
+};

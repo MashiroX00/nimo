@@ -1,4 +1,5 @@
-import { composeDown, composeUp, getContainerPid, getContainerStats, isContainerRunning, sendCommandToContainer, waitForContainerToStart, waitForContainerToStop, } from '../utils/docker.js';
+import { composeDown, composeUp, getContainerPid, getContainerStats, isContainerRunning, sendCommandToContainer, waitForContainerToStart, waitForContainerToStop, stopContainer, } from '../utils/docker.js';
+import { env } from '../config/env.js';
 import { DockerRepository } from '../repositories/docker.repository.js';
 import { HttpError } from '../utils/httpError.js';
 const ensureDockerExists = (docker, identifier) => {
@@ -117,7 +118,15 @@ export class DockerService {
         if (sendResult.exitCode !== 0) {
             throw new HttpError(500, `Failed to send stop command to "${docker.name}": ${sendResult.stderr || sendResult.stdout}`);
         }
-        const stopped = await waitForContainerToStop(docker.name);
+        const gracefulStop = await waitForContainerToStop(docker.name);
+        let stopped = gracefulStop;
+        if (!gracefulStop) {
+            const stopResult = await stopContainer(docker.name);
+            if (stopResult.exitCode !== 0) {
+                throw new HttpError(500, `Container "${docker.name}" did not respond to stop command and docker stop failed: ${stopResult.stderr || stopResult.stdout}`);
+            }
+            stopped = await waitForContainerToStop(docker.name, env.dockerStopTimeoutSec * 1000, 1_000);
+        }
         if (!stopped) {
             throw new HttpError(500, `Container "${docker.name}" did not stop within the timeout window`);
         }

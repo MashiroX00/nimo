@@ -172,4 +172,8 @@ export const tailContainerLogs = (containerName, onExit, options = {}) => {
     child.on('error', () => onExit(null));
     return child;
 };
+export const stopContainer = async (containerName) => {
+    const args = ['stop', '--time', String(env.dockerStopTimeoutSec), containerName];
+    return execDocker(args);
+};
 //# sourceMappingURL=docker.js.map

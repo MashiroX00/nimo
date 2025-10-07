@@ -7,8 +7,10 @@ import {
   sendCommandToContainer,
   waitForContainerToStart,
   waitForContainerToStop,
+  stopContainer,
   type ContainerStats,
 } from '../utils/docker.js';
+import { env } from '../config/env.js';
 import { DockerRepository, type CreateDockerInput, type UpdateDockerInput } from '../repositories/docker.repository.js';
 import type { docker as DockerEntity } from '../../generated/prisma/index.js';
 import { HttpError } from '../utils/httpError.js';
@@ -178,7 +180,25 @@ export class DockerService {
       );
     }
 
-    const stopped = await waitForContainerToStop(docker.name);
+    const gracefulStop = await waitForContainerToStop(docker.name);
+    let stopped = gracefulStop;
+
+    if (!gracefulStop) {
+      const stopResult = await stopContainer(docker.name);
+      if (stopResult.exitCode !== 0) {
+        throw new HttpError(
+          500,
+          `Container "${docker.name}" did not respond to stop command and docker stop failed: ${stopResult.stderr || stopResult.stdout}`,
+        );
+      }
+
+      stopped = await waitForContainerToStop(
+        docker.name,
+        env.dockerStopTimeoutSec * 1000,
+        1_000,
+      );
+    }
+
     if (!stopped) {
       throw new HttpError(500, `Container "${docker.name}" did not stop within the timeout window`);
     }

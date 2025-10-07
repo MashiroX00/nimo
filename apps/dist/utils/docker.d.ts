@@ -25,4 +25,5 @@ export declare const tailContainerLogs: (containerName: string, onExit: (code: n
     since?: string;
     follow?: boolean;
 }) => ChildProcessWithoutNullStreams;
+export declare const stopContainer: (containerName: string) => Promise<CommandResult>;
 //# sourceMappingURL=docker.d.ts.map
