@@ -1,10 +1,19 @@
+import { existsSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-const COMMAND_EXTENSIONS = ['.ts', '.js', '.cjs', '.mjs'];
+const COMMAND_EXTENSIONS = ['.js', '.mjs', '.cjs', '.ts'];
 export const loadCommands = async () => {
     const commands = new Map();
-    const commandsDir = path.resolve(process.cwd(), 'src', 'commands');
+    const possibleDirs = [
+        path.resolve(process.cwd(), 'dist', 'commands'),
+        path.resolve(process.cwd(), 'src', 'commands'),
+    ];
+    const commandsDir = possibleDirs.find((dir) => existsSync(dir));
+    if (!commandsDir) {
+        console.warn('[commandLoader] No commands directory found.');
+        return commands;
+    }
     const files = await readdir(commandsDir);
     for (const file of files) {
         const ext = path.extname(file);
