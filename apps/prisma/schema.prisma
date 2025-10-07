@@ -1,0 +1,56 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+
+enum status {
+  ACTIVE
+  INACTIVE
+  PENDING
+}
+
+model docker {
+  id String @id @default(uuid())
+  name String @unique
+  status status @default(ACTIVE)
+  type String? // "minecraft", "zomboid", "csgo", etc.
+  stopcommand String? // command to stop the server gracefully (e.g., "stop" for Minecraft)
+  pid Int? // process ID of the running container
+  localport Int?
+  bindport Int?
+  dockercompose String?
+  dockerlocation String?
+  description String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  servermonitors servermonitor[]
+  @@index([name])
+}
+
+model servermonitor {
+  id String @id @default(uuid())
+  dockerId String
+  docker docker @relation(fields: [dockerId], references: [id], onDelete: Cascade)
+  name String @unique
+  cpu Float?
+  ram Float?
+  status status @default(ACTIVE)
+  description String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([dockerId])
+}
