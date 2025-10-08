@@ -20,11 +20,11 @@ export type ContainerStats = {
 export declare const getContainerStats: (containerName: string) => Promise<ContainerStats | null>;
 export declare const waitForContainerToStop: (containerName: string, timeoutMs?: number, pollIntervalMs?: number) => Promise<boolean>;
 export declare const waitForContainerToStart: (containerName: string, timeoutMs?: number, pollIntervalMs?: number) => Promise<boolean>;
-export declare const sendCommandToContainer: (containerName: string, command: string) => Promise<CommandResult>;
 export declare const tailContainerLogs: (containerName: string, onExit: (code: number | null) => void, options?: {
     since?: string;
     follow?: boolean;
 }) => ChildProcessWithoutNullStreams;
 export declare const stopContainer: (containerName: string) => Promise<CommandResult>;
 export declare const ensureManagementScripts: (containerName: string, stopCommand?: string | null) => Promise<void>;
+export declare const executeContainerScript: (containerName: string, scriptName: string, commandText?: string | null) => Promise<CommandResult>;
 //# sourceMappingURL=docker.d.ts.map

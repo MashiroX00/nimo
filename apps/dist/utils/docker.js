@@ -152,13 +152,6 @@ export const waitForContainerToStart = async (containerName, timeoutMs = 15_000,
     }
     return false;
 };
-export const sendCommandToContainer = async (containerName, command) => {
-    const trimmed = command.trim();
-    if (!trimmed) {
-        throw new Error('Stop command is empty');
-    }
-    return execDocker(['exec', '-i', containerName, 'sh', '-c', 'cat > /proc/1/fd/0'], { input: `${trimmed}\n` });
-};
 export const tailContainerLogs = (containerName, onExit, options = {}) => {
     const args = [...dockerCli.args, 'logs', containerName];
     if (options.since) {
@@ -193,7 +186,7 @@ export const ensureManagementScripts = async (containerName, stopCommand) => {
     const runScriptPath = `${toolsDir}/command.sh`;
     const defaultStop = (stopCommand ?? '').trim();
     const stopScript = `#!/bin/sh
-set -eo pipefail
+set -eu
 
 DEFAULT_COMMAND=${JSON.stringify(defaultStop)}
 CMD="$DEFAULT_COMMAND"
@@ -207,10 +200,10 @@ if [ -z "$CMD" ]; then
   exit 1
 fi
 
-printf '%s\\n' "$CMD" > /proc/1/fd/0
+printf '%s\\r\\n' "$CMD" > /proc/1/fd/0
 `;
     const runScript = `#!/bin/sh
-set -eo pipefail
+set -eu
 
 if [ "$#" -eq 0 ]; then
   echo "Usage: $0 <command...>" >&2
@@ -218,7 +211,7 @@ if [ "$#" -eq 0 ]; then
 fi
 
 CMD="$*"
-printf '%s\\n' "$CMD" > /proc/1/fd/0
+printf '%s\\r\\n' "$CMD" > /proc/1/fd/0
 `;
     const stopResult = await writeFileToContainer(containerName, stopScriptPath, stopScript);
     if (stopResult.exitCode !== 0) {
@@ -228,5 +221,14 @@ printf '%s\\n' "$CMD" > /proc/1/fd/0
     if (runResult.exitCode !== 0) {
         throw new Error(`Failed to write command script: ${runResult.stderr || runResult.stdout || 'unknown error'}`);
     }
+};
+export const executeContainerScript = async (containerName, scriptName, commandText) => {
+    const scriptPath = `/docker-tools/${scriptName}`;
+    const args = ['exec', containerName, scriptPath];
+    if (commandText && commandText.trim().length > 0) {
+        const tokens = splitCommand(commandText);
+        args.push(tokens.command, ...tokens.args);
+    }
+    return execDocker(args);
 };
 //# sourceMappingURL=docker.js.map

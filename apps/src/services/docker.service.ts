@@ -4,18 +4,17 @@ import {
   getContainerPid,
   getContainerStats,
   isContainerRunning,
-  sendCommandToContainer,
   waitForContainerToStart,
   waitForContainerToStop,
   stopContainer,
   type ContainerStats,
   ensureManagementScripts,
+  executeContainerScript,
 } from '../utils/docker.js';
 import { env } from '../config/env.js';
 import { DockerRepository, type CreateDockerInput, type UpdateDockerInput } from '../repositories/docker.repository.js';
 import type { docker as DockerEntity } from '../../generated/prisma/index.js';
 import { HttpError } from '../utils/httpError.js';
-import type { CommandResult } from '../utils/command.js';
 
 export type CreateDockerDto = {
   name: string;
@@ -171,10 +170,6 @@ export class DockerService {
 
   static async stopDocker(id: string): Promise<DockerEntity> {
     const docker = await DockerService.getDockerById(id);
-    if (!docker.stopcommand) {
-      throw new HttpError(400, `Docker "${docker.name}" does not have a stop command configured`);
-    }
-
     const running = await isContainerRunning(docker.name);
     if (!running) {
       await DockerRepository.update(docker.id, { status: 'INACTIVE', pid: null });
@@ -183,15 +178,20 @@ export class DockerService {
 
     await DockerRepository.update(docker.id, { status: 'PENDING' });
 
-    const sendResult = await sendCommandToContainer(docker.name, docker.stopcommand);
-    if (sendResult.exitCode !== 0) {
-      throw new HttpError(
-        500,
-        `Failed to send stop command to "${docker.name}": ${sendResult.stderr || sendResult.stdout}`,
-      );
+    let gracefulStop = false;
+    try {
+      const scriptResult = await executeContainerScript(docker.name, 'stop.sh');
+      if (scriptResult.exitCode !== 0) {
+        console.warn(
+          `[DockerService] stop.sh exit code ${scriptResult.exitCode} for ${docker.name}: ${scriptResult.stderr || scriptResult.stdout}`,
+        );
+      } else {
+        gracefulStop = await waitForContainerToStop(docker.name);
+      }
+    } catch (error) {
+      console.warn(`[DockerService] stop.sh execution failed for ${docker.name}`, error);
     }
 
-    const gracefulStop = await waitForContainerToStop(docker.name);
     let stopped = gracefulStop;
 
     if (!gracefulStop) {
@@ -250,23 +250,19 @@ export class DockerService {
     return stats;
   }
 
-  static async sendCommand(id: string, command: string): Promise<CommandResult> {
+  static async sendCommand(id: string, command?: string): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
     const docker = await DockerService.getDockerById(id);
-    const trimmed = command?.trim();
-    if (!trimmed) {
-      throw new HttpError(400, 'Command text is required');
-    }
 
     const running = await isContainerRunning(docker.name);
     if (!running) {
       throw new HttpError(400, `Container "${docker.name}" is not running`);
     }
 
-    const result = await sendCommandToContainer(docker.name, trimmed);
+    const result = await executeContainerScript(docker.name, 'command.sh', command?.trim());
     if (result.exitCode !== 0) {
       throw new HttpError(
         500,
-        `Command failed with exit code ${result.exitCode}: ${result.stderr || result.stdout}`,
+        `Command script failed with exit code ${result.exitCode}: ${result.stderr || result.stdout}`,
       );
     }
 

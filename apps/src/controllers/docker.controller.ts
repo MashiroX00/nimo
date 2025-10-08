@@ -66,6 +66,9 @@ export class DockerController {
   static async command(req: Request, res: Response) {
     const id = getDockerId(req);
     const { command } = req.body ?? {};
+    if (typeof command !== 'string' || command.trim().length === 0) {
+      throw new HttpError(400, 'Command text is required');
+    }
     const result = await DockerService.sendCommand(id, command);
     res.json({
       exitCode: result.exitCode,
