@@ -5,3 +5,6 @@ node_modules
 /generated/prisma
 
 server
+
+apps/dist
+bots/dist

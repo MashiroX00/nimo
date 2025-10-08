@@ -1,1 +1,0 @@
-{"version":3,"file":"docker-stats.service.d.ts","sourceRoot":"","sources":["../../src/services/docker-stats.service.ts"],"names":[],"mappings":"AAOA,qBAAa,kBAAkB;IAC7B,OAAO,CAAC,KAAK,CAA6B;IAC1C,OAAO,CAAC,OAAO,CAAS;IAExB,KAAK;IAaL,IAAI;IASE,OAAO,IAAI,OAAO,CAAC,IAAI,CAAC;CAkB/B;AAED,eAAO,MAAM,kBAAkB,oBAA2B,CAAC"}
