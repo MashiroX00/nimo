@@ -289,7 +289,8 @@ if [ -z "$CMD" ]; then
   exit 1
 fi
 
-printf '%s\\r\\n' "$CMD" > /proc/1/fd/0
+printf '%s\\n' "$CMD" > /proc/1/fd/0
+printf '\\n' > /proc/1/fd/0
 `;
 
   const runScript = `#!/bin/sh
@@ -301,7 +302,8 @@ if [ "$#" -eq 0 ]; then
 fi
 
 CMD="$*"
-printf '%s\\r\\n' "$CMD" > /proc/1/fd/0
+printf '%s\\n' "$CMD" > /proc/1/fd/0
+printf '\\n' > /proc/1/fd/0
 `;
 
   const stopResult = await writeFileToContainer(containerName, stopScriptPath, stopScript);
