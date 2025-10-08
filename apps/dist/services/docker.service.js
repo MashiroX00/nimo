@@ -2,18 +2,21 @@ import { composeDown, composeUp, getContainerPid, getContainerStats, isContainer
 import { env } from '../config/env.js';
 import { DockerRepository } from '../repositories/docker.repository.js';
 import { HttpError } from '../utils/httpError.js';
+import { createLogger } from '../logger.js';
 const ensureDockerExists = (docker, identifier) => {
     if (!docker) {
         throw new HttpError(404, `Docker entry "${identifier}" not found`);
     }
     return docker;
 };
+const log = createLogger('DockerService');
 export class DockerService {
     static async createDocker(input) {
         const existing = await DockerRepository.findByName(input.name);
         if (existing) {
             throw new HttpError(409, `Docker entry with name "${input.name}" already exists`);
         }
+        log.info('Creating docker entry', { name: input.name });
         const data = {
             name: input.name,
             type: input.type ?? null,
@@ -26,9 +29,12 @@ export class DockerService {
             status: 'INACTIVE',
             pid: null,
         };
-        return DockerRepository.create(data);
+        const created = await DockerRepository.create(data);
+        log.info('Docker entry created', { id: created.id, name: created.name });
+        return created;
     }
     static listDockers() {
+        log.debug('Listing docker entries');
         return DockerRepository.findMany();
     }
     static async getDockerById(id) {
@@ -38,6 +44,7 @@ export class DockerService {
     static async updateDocker(id, input) {
         await DockerService.getDockerById(id);
         const data = {};
+        log.info('Updating docker entry', { id, fields: Object.keys(input) });
         if (Object.prototype.hasOwnProperty.call(input, 'name') && input.name) {
             data.name = input.name;
         }
@@ -68,7 +75,9 @@ export class DockerService {
         if (Object.prototype.hasOwnProperty.call(input, 'pid')) {
             data.pid = input.pid ?? null;
         }
-        return DockerRepository.update(id, data);
+        const updated = await DockerRepository.update(id, data);
+        log.info('Docker entry updated', { id });
+        return updated;
     }
     static async deleteDocker(id) {
         const docker = await DockerService.getDockerById(id);
@@ -83,7 +92,13 @@ export class DockerService {
         if (!docker.dockerlocation && !docker.dockercompose) {
             throw new HttpError(400, 'Docker entry does not have docker-compose configuration');
         }
+        log.info('Starting docker', { id, name: docker.name, build: Boolean(options?.build) });
         await DockerRepository.update(docker.id, { status: 'PENDING' });
+        log.debug('Invoking docker compose up', {
+            name: docker.name,
+            compose: docker.dockercompose,
+            location: docker.dockerlocation,
+        });
         const composeResult = await composeUp({
             composeFile: docker.dockercompose,
             workingDirectory: docker.dockerlocation,
@@ -91,6 +106,12 @@ export class DockerService {
             build: options?.build ?? false,
         });
         if (composeResult.exitCode !== 0) {
+            log.error('docker compose up failed', {
+                name: docker.name,
+                exitCode: composeResult.exitCode,
+                stderr: composeResult.stderr,
+                stdout: composeResult.stdout,
+            });
             throw new HttpError(500, `Failed to start docker "${docker.name}": ${composeResult.stderr || composeResult.stdout}`);
         }
         const started = await waitForContainerToStart(docker.name);
@@ -99,15 +120,22 @@ export class DockerService {
         }
         try {
             await ensureManagementScripts(docker.name, docker.stopcommand ?? null);
+            log.debug('Prepared management scripts', { name: docker.name });
         }
         catch (error) {
+            log.error('Failed to prepare management scripts', {
+                name: docker.name,
+                error: error.message,
+            });
             throw new HttpError(500, `Failed to prepare management scripts for "${docker.name}": ${error.message}`);
         }
         const pid = await getContainerPid(docker.name);
-        return DockerRepository.update(docker.id, {
+        const updated = await DockerRepository.update(docker.id, {
             status: 'ACTIVE',
             pid,
         });
+        log.info('Docker started', { id, name: docker.name, pid });
+        return updated;
     }
     static async stopDocker(id) {
         const docker = await DockerService.getDockerById(id);
@@ -121,17 +149,23 @@ export class DockerService {
         try {
             const scriptResult = await executeContainerScript(docker.name, 'stop.sh');
             if (scriptResult.exitCode !== 0) {
-                console.warn(`[DockerService] stop.sh exit code ${scriptResult.exitCode} for ${docker.name}: ${scriptResult.stderr || scriptResult.stdout}`);
+                log.warn('stop.sh returned non-zero exit code', {
+                    name: docker.name,
+                    exitCode: scriptResult.exitCode,
+                    stderr: scriptResult.stderr,
+                    stdout: scriptResult.stdout,
+                });
             }
             else {
                 gracefulStop = await waitForContainerToStop(docker.name);
             }
         }
         catch (error) {
-            console.warn(`[DockerService] stop.sh execution failed for ${docker.name}`, error);
+            log.warn('stop.sh execution failed', { name: docker.name, error: error.message });
         }
         let stopped = gracefulStop;
         if (!gracefulStop) {
+            log.warn('Falling back to docker stop', { name: docker.name });
             const stopResult = await stopContainer(docker.name);
             if (stopResult.exitCode !== 0) {
                 throw new HttpError(500, `Container "${docker.name}" did not respond to stop command and docker stop failed: ${stopResult.stderr || stopResult.stdout}`);
@@ -149,13 +183,17 @@ export class DockerService {
         if (downResult.exitCode !== 0) {
             throw new HttpError(500, `Failed to stop docker "${docker.name}": ${downResult.stderr || downResult.stdout}`);
         }
-        return DockerRepository.update(docker.id, { status: 'INACTIVE', pid: null });
+        const updated = await DockerRepository.update(docker.id, { status: 'INACTIVE', pid: null });
+        log.info('Docker stopped', { id, name: docker.name });
+        return updated;
     }
     static async restartDocker(id, options) {
+        log.info('Restarting docker', { id });
         await DockerService.stopDocker(id);
         return DockerService.startDocker(id, options);
     }
     static async updateStats(docker) {
+        log.debug('Collecting docker stats', { name: docker.name });
         const stats = await getContainerStats(docker.name);
         if (!stats)
             return null;
@@ -174,6 +212,7 @@ export class DockerService {
         if (!running) {
             throw new HttpError(400, `Container "${docker.name}" is not running`);
         }
+        log.info('Executing command script', { id, name: docker.name });
         const result = await executeContainerScript(docker.name, 'command.sh', command?.trim());
         if (result.exitCode !== 0) {
             throw new HttpError(500, `Command script failed with exit code ${result.exitCode}: ${result.stderr || result.stdout}`);

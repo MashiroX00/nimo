@@ -47,6 +47,7 @@ Define the following in `.env`:
 | `DOCKER_COMPOSE_COMMAND` | Compose executable | `docker compose` |
 | `DOCKER_LOG_WS_PREFIX` | WebSocket base path for logs | `/ws` |
 | `DOCKER_STOP_TIMEOUT_SEC` | Seconds Docker waits before force-killing on fallback `docker stop` | `30` |
+| `LOG_LEVEL` | Log verbosity (`debug`, `info`, `warn`, `error`) | `info` |
 
 ## Running the Service
 

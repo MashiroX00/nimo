@@ -4,6 +4,9 @@ import { env } from './config/env.js';
 import { prisma } from './config/prisma.js';
 import { dockerStatsService } from './services/docker-stats.service.js';
 import { DockerLogGateway } from './websocket/docker-log.gateway.js';
+import { createLogger } from './logger.js';
+
+const log = createLogger('Server');
 
 const bootstrap = async () => {
   await prisma.$connect();
@@ -13,14 +16,16 @@ const bootstrap = async () => {
   logGateway.bindListeners();
 
   server.listen(env.port, () => {
-    console.log(`Docker Management API running on http://localhost:${env.port}`);
-    console.log(`Swagger UI available at http://localhost:${env.port}/docs`);
-    console.log(`WebSocket logs prefix: ${env.wsPrefix}/<docker-name>`);
+    log.info('Docker Management API started', {
+      port: env.port,
+      docs: `/docs`,
+      wsPrefix: env.wsPrefix,
+    });
     dockerStatsService.start();
   });
 
   const shutdown = async (signal: string) => {
-    console.log(`Received ${signal}, shutting down...`);
+    log.warn('Shutting down server', { signal });
     dockerStatsService.stop();
     server.close(async () => {
       await prisma.$disconnect();
@@ -33,6 +38,6 @@ const bootstrap = async () => {
 };
 
 bootstrap().catch((error) => {
-  console.error('Failed to start application', error);
+  log.error('Failed to start application', { error: (error as Error).message });
   process.exit(1);
 });

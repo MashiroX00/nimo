@@ -15,6 +15,7 @@ import { env } from '../config/env.js';
 import { DockerRepository, type CreateDockerInput, type UpdateDockerInput } from '../repositories/docker.repository.js';
 import type { docker as DockerEntity } from '../../generated/prisma/index.js';
 import { HttpError } from '../utils/httpError.js';
+import { createLogger } from '../logger.js';
 
 export type CreateDockerDto = {
   name: string;
@@ -39,12 +40,16 @@ const ensureDockerExists = (docker: DockerEntity | null, identifier: string): Do
   return docker;
 };
 
+const log = createLogger('DockerService');
+
 export class DockerService {
   static async createDocker(input: CreateDockerDto): Promise<DockerEntity> {
     const existing = await DockerRepository.findByName(input.name);
     if (existing) {
       throw new HttpError(409, `Docker entry with name "${input.name}" already exists`);
     }
+
+    log.info('Creating docker entry', { name: input.name });
 
     const data: CreateDockerInput = {
       name: input.name,
@@ -59,10 +64,13 @@ export class DockerService {
       pid: null,
     };
 
-    return DockerRepository.create(data);
+    const created = await DockerRepository.create(data);
+    log.info('Docker entry created', { id: created.id, name: created.name });
+    return created;
   }
 
   static listDockers(): Promise<DockerEntity[]> {
+    log.debug('Listing docker entries');
     return DockerRepository.findMany();
   }
 
@@ -75,6 +83,7 @@ export class DockerService {
     await DockerService.getDockerById(id);
 
     const data: UpdateDockerInput = {};
+    log.info('Updating docker entry', { id, fields: Object.keys(input) });
 
     if (Object.prototype.hasOwnProperty.call(input, 'name') && input.name) {
       data.name = input.name;
@@ -107,7 +116,9 @@ export class DockerService {
       data.pid = input.pid ?? null;
     }
 
-    return DockerRepository.update(id, data);
+    const updated = await DockerRepository.update(id, data);
+    log.info('Docker entry updated', { id });
+    return updated;
   }
 
   static async deleteDocker(id: string): Promise<DockerEntity> {
@@ -127,7 +138,15 @@ export class DockerService {
       throw new HttpError(400, 'Docker entry does not have docker-compose configuration');
     }
 
+    log.info('Starting docker', { id, name: docker.name, build: Boolean(options?.build) });
+
     await DockerRepository.update(docker.id, { status: 'PENDING' });
+
+    log.debug('Invoking docker compose up', {
+      name: docker.name,
+      compose: docker.dockercompose,
+      location: docker.dockerlocation,
+    });
 
     const composeResult = await composeUp({
       composeFile: docker.dockercompose,
@@ -137,6 +156,12 @@ export class DockerService {
     });
 
     if (composeResult.exitCode !== 0) {
+      log.error('docker compose up failed', {
+        name: docker.name,
+        exitCode: composeResult.exitCode,
+        stderr: composeResult.stderr,
+        stdout: composeResult.stdout,
+      });
       throw new HttpError(
         500,
         `Failed to start docker "${docker.name}": ${composeResult.stderr || composeResult.stdout}`,
@@ -153,7 +178,12 @@ export class DockerService {
 
     try {
       await ensureManagementScripts(docker.name, docker.stopcommand ?? null);
+      log.debug('Prepared management scripts', { name: docker.name });
     } catch (error) {
+      log.error('Failed to prepare management scripts', {
+        name: docker.name,
+        error: (error as Error).message,
+      });
       throw new HttpError(
         500,
         `Failed to prepare management scripts for "${docker.name}": ${(error as Error).message}`,
@@ -162,10 +192,12 @@ export class DockerService {
 
     const pid = await getContainerPid(docker.name);
 
-    return DockerRepository.update(docker.id, {
+    const updated = await DockerRepository.update(docker.id, {
       status: 'ACTIVE',
       pid,
     });
+    log.info('Docker started', { id, name: docker.name, pid });
+    return updated;
   }
 
   static async stopDocker(id: string): Promise<DockerEntity> {
@@ -182,19 +214,23 @@ export class DockerService {
     try {
       const scriptResult = await executeContainerScript(docker.name, 'stop.sh');
       if (scriptResult.exitCode !== 0) {
-        console.warn(
-          `[DockerService] stop.sh exit code ${scriptResult.exitCode} for ${docker.name}: ${scriptResult.stderr || scriptResult.stdout}`,
-        );
+        log.warn('stop.sh returned non-zero exit code', {
+          name: docker.name,
+          exitCode: scriptResult.exitCode,
+          stderr: scriptResult.stderr,
+          stdout: scriptResult.stdout,
+        });
       } else {
         gracefulStop = await waitForContainerToStop(docker.name);
       }
     } catch (error) {
-      console.warn(`[DockerService] stop.sh execution failed for ${docker.name}`, error);
+      log.warn('stop.sh execution failed', { name: docker.name, error: (error as Error).message });
     }
 
     let stopped = gracefulStop;
 
     if (!gracefulStop) {
+      log.warn('Falling back to docker stop', { name: docker.name });
       const stopResult = await stopContainer(docker.name);
       if (stopResult.exitCode !== 0) {
         throw new HttpError(
@@ -227,15 +263,19 @@ export class DockerService {
       );
     }
 
-    return DockerRepository.update(docker.id, { status: 'INACTIVE', pid: null });
+    const updated = await DockerRepository.update(docker.id, { status: 'INACTIVE', pid: null });
+    log.info('Docker stopped', { id, name: docker.name });
+    return updated;
   }
 
   static async restartDocker(id: string, options?: { build?: boolean }): Promise<DockerEntity> {
+    log.info('Restarting docker', { id });
     await DockerService.stopDocker(id);
     return DockerService.startDocker(id, options);
   }
 
   static async updateStats(docker: DockerEntity): Promise<ContainerStats | null> {
+    log.debug('Collecting docker stats', { name: docker.name });
     const stats = await getContainerStats(docker.name);
     if (!stats) return null;
 
@@ -258,6 +298,7 @@ export class DockerService {
       throw new HttpError(400, `Container "${docker.name}" is not running`);
     }
 
+    log.info('Executing command script', { id, name: docker.name });
     const result = await executeContainerScript(docker.name, 'command.sh', command?.trim());
     if (result.exitCode !== 0) {
       throw new HttpError(

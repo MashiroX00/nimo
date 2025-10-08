@@ -2,6 +2,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { env } from '../config/env.js';
 import { runCommand, splitCommand } from './command.js';
+import { createLogger } from '../logger.js';
 const dockerCli = splitCommand(env.dockerCli);
 const dockerComposeCli = splitCommand(env.dockerComposeCommand);
 const execDocker = (args, options = {}) => runCommand(dockerCli.command, [...dockerCli.args, ...args], options);
@@ -31,7 +32,17 @@ export const composeUp = async (options) => {
     if (cwd) {
         execOptions.cwd = cwd;
     }
-    return execDockerCompose(args, execOptions);
+    log.debug('compose up', { projectName, composeFile, workingDirectory: execOptions.cwd, build });
+    const result = await execDockerCompose(args, execOptions);
+    if (result.exitCode !== 0) {
+        log.error('compose up failed', {
+            projectName,
+            exitCode: result.exitCode,
+            stderr: result.stderr,
+            stdout: result.stdout,
+        });
+    }
+    return result;
 };
 export const composeDown = async (options) => {
     const { composeFile, workingDirectory, projectName } = options;
@@ -48,7 +59,17 @@ export const composeDown = async (options) => {
     if (cwd) {
         execOptions.cwd = cwd;
     }
-    return execDockerCompose(args, execOptions);
+    log.debug('compose down', { projectName, composeFile, workingDirectory: execOptions.cwd });
+    const result = await execDockerCompose(args, execOptions);
+    if (result.exitCode !== 0) {
+        log.error('compose down failed', {
+            projectName,
+            exitCode: result.exitCode,
+            stderr: result.stderr,
+            stdout: result.stdout,
+        });
+    }
+    return result;
 };
 export const getContainerPid = async (containerName) => {
     const result = await execDocker(['inspect', '--format', '{{.State.Pid}}', containerName]);
@@ -178,7 +199,18 @@ const writeFileToContainer = async (containerName, filePath, content) => {
         'EOF',
         `chmod +x '${filePath}'`,
     ].join('\n');
-    return execDocker(['exec', containerName, 'sh', '-c', shellScript]);
+    log.debug('Writing file inside container', { containerName, filePath });
+    const result = await execDocker(['exec', containerName, 'sh', '-c', shellScript]);
+    if (result.exitCode !== 0) {
+        log.error('Failed to write file inside container', {
+            containerName,
+            filePath,
+            exitCode: result.exitCode,
+            stderr: result.stderr,
+            stdout: result.stdout,
+        });
+    }
+    return result;
 };
 export const ensureManagementScripts = async (containerName, stopCommand) => {
     const toolsDir = '/docker-tools';
@@ -217,10 +249,12 @@ printf '%s\\r\\n' "$CMD" > /proc/1/fd/0
     if (stopResult.exitCode !== 0) {
         throw new Error(`Failed to write stop script: ${stopResult.stderr || stopResult.stdout || 'unknown error'}`);
     }
+    log.debug('Stop script ensured', { containerName, stopScriptPath });
     const runResult = await writeFileToContainer(containerName, runScriptPath, runScript);
     if (runResult.exitCode !== 0) {
         throw new Error(`Failed to write command script: ${runResult.stderr || runResult.stdout || 'unknown error'}`);
     }
+    log.debug('Command script ensured', { containerName, runScriptPath });
 };
 export const executeContainerScript = async (containerName, scriptName, commandText) => {
     const scriptPath = `/docker-tools/${scriptName}`;
@@ -229,6 +263,18 @@ export const executeContainerScript = async (containerName, scriptName, commandT
         const tokens = splitCommand(commandText);
         args.push(tokens.command, ...tokens.args);
     }
-    return execDocker(args);
+    log.debug('Executing container script', { containerName, scriptPath, args: args.slice(3) });
+    const result = await execDocker(args);
+    if (result.exitCode !== 0) {
+        log.warn('Container script returned non-zero exit code', {
+            containerName,
+            scriptPath,
+            exitCode: result.exitCode,
+            stderr: result.stderr,
+            stdout: result.stdout,
+        });
+    }
+    return result;
 };
+const log = createLogger('DockerUtils');
 //# sourceMappingURL=docker.js.map
