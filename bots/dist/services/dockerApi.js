@@ -72,5 +72,14 @@ export const dockerApi = {
             throw normalizeError(error);
         }
     },
+    async sendCommand(id, command) {
+        try {
+            const response = await client.post(`/dockers/${id}/command`, { command });
+            return response.data;
+        }
+        catch (error) {
+            throw normalizeError(error);
+        }
+    },
 };
 //# sourceMappingURL=dockerApi.js.map

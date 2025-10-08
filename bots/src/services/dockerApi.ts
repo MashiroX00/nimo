@@ -32,6 +32,12 @@ export interface DockerMonitor {
   updatedAt: string;
 }
 
+export interface DockerCommandResult {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+}
+
 const client = axios.create({
   baseURL: env.dockerApiBaseUrl,
   headers: {
@@ -107,5 +113,13 @@ export const dockerApi = {
       throw normalizeError(error);
     }
   },
-};
 
+  async sendCommand(id: string, command: string): Promise<DockerCommandResult> {
+    try {
+      const response = await client.post<DockerCommandResult>(`/dockers/${id}/command`, { command });
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error);
+    }
+  },
+};

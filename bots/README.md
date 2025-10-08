@@ -53,9 +53,10 @@ DOCKER_API_BASE_URL=http://localhost:4000/api
 
 ### Available Commands
 
-- `/docker manage` – opens an interactive view with docker selection, action buttons, and auto-refresh.
-- `/docker status name:<docker-name>` – shows detailed information for the specified entry.
-- `/ping` – quick heartbeat check for the bot.
+- `/docker manage` - opens an interactive view with docker selection, action buttons, and auto-refresh.
+- `/docker status name:<docker-name>` - shows detailed information for the specified entry.
+- `/docker command name:<docker-name> input:<text>` - sends a raw command to the container STDIN and echoes stdout/stderr.
+- `/ping` - quick heartbeat check for the bot.
 
 ## Project Structure
 
@@ -70,4 +71,3 @@ DOCKER_API_BASE_URL=http://localhost:4000/api
 
 - The bot assumes the Docker Management API is reachable before performing actions.
 - Re-run `npm run register` after adding or modifying commands so Discord picks up the changes.
-
