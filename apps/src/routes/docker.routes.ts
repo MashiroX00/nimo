@@ -13,6 +13,6 @@ router.post('/:id/start', DockerController.start);
 router.post('/:id/stop', DockerController.stop);
 router.post('/:id/restart', DockerController.restart);
 router.get('/:id/stats', DockerController.stats);
+router.post('/:id/command', DockerController.command);
 
 export const dockerRouter = router;
-

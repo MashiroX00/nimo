@@ -63,6 +63,21 @@ const swaggerDefinition = {
           build: { type: 'boolean', default: false },
         },
       },
+      DockerCommandPayload: {
+        type: 'object',
+        required: ['command'],
+        properties: {
+          command: { type: 'string', description: 'Command to send to container STDIN' },
+        },
+      },
+      DockerCommandResult: {
+        type: 'object',
+        properties: {
+          exitCode: { type: 'integer', nullable: true },
+          stdout: { type: 'string' },
+          stderr: { type: 'string' },
+        },
+      },
       ServerMonitor: {
         type: 'object',
         properties: {
@@ -241,6 +256,33 @@ const swaggerDefinition = {
         },
       },
     },
+    '/dockers/{id}/command': {
+      post: {
+        tags: ['Docker'],
+        summary: 'Send a raw command to the container STDIN.',
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/DockerCommandPayload' },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: 'Command executed.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/DockerCommandResult' },
+              },
+            },
+          },
+        },
+      },
+    },
     '/dockers/{id}/restart': {
       post: {
         tags: ['Docker'],
@@ -294,4 +336,3 @@ export const swaggerSpec = swaggerJsdoc({
   definition: swaggerDefinition,
   apis: [],
 });
-

@@ -62,4 +62,15 @@ export class DockerController {
     const monitor = await DockerRepository.findMonitorByDockerId(id);
     res.json(monitor);
   }
+
+  static async command(req: Request, res: Response) {
+    const id = getDockerId(req);
+    const { command } = req.body ?? {};
+    const result = await DockerService.sendCommand(id, command);
+    res.json({
+      exitCode: result.exitCode,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    });
+  }
 }

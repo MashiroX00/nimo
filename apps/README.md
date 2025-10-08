@@ -11,6 +11,7 @@ Backend service for orchestrating docker-compose workloads with Prisma persisten
 - WebSocket streaming for container logs at `ws://<host>:<port>/<prefix>/<docker-name>`.
 - Auto generated OpenAPI docs served at `/docs` (powered by swagger-ui).
 - Configurable via `.env`, including CLI overrides and polling interval.
+- Automatically provisions helper scripts (`/docker-tools/stop.sh`, `/docker-tools/command.sh`) inside each container when it starts for manual control.
 
 ## Requirements
 
@@ -72,11 +73,12 @@ The service listens on `http://localhost:PORT`. Swagger UI is available at `http
 - `GET /api/dockers/:id` – fetch details.
 - `PUT /api/dockers/:id` – update metadata.
 - `DELETE /api/dockers/:id` – remove entry (must not be running).
-- `POST /api/dockers/:id/start` – run compose (`{ "build": true }` optional).
-- `POST /api/dockers/:id/stop` – pipe stored stop command to STDIN and tear down compose.
-- `POST /api/dockers/:id/restart` – convenience wrapper for stop + start.
-- `GET /api/dockers/:id/stats` – latest metrics snapshot.
-- `GET /api/monitors` – list stored monitoring records.
+- `POST /api/dockers/:id/start` - run compose (`{ "build": true }` optional).
+- `POST /api/dockers/:id/stop` - pipe stored stop command to STDIN and tear down compose.
+- `POST /api/dockers/:id/restart` - convenience wrapper for stop + start.
+- `POST /api/dockers/:id/command` - send a raw command string to the container STDIN.
+- `GET /api/dockers/:id/stats` - latest metrics snapshot.
+- `GET /api/monitors` - list stored monitoring records.
 
 Refer to Swagger for models and request payloads.
 

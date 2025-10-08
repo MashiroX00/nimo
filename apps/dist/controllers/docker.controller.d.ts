@@ -9,5 +9,6 @@ export declare class DockerController {
     static stop(req: Request, res: Response): Promise<void>;
     static restart(req: Request, res: Response): Promise<void>;
     static stats(req: Request, res: Response): Promise<void>;
+    static command(req: Request, res: Response): Promise<void>;
 }
 //# sourceMappingURL=docker.controller.d.ts.map

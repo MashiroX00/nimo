@@ -1,4 +1,4 @@
-import { composeDown, composeUp, getContainerPid, getContainerStats, isContainerRunning, sendCommandToContainer, waitForContainerToStart, waitForContainerToStop, stopContainer, } from '../utils/docker.js';
+import { composeDown, composeUp, getContainerPid, getContainerStats, isContainerRunning, sendCommandToContainer, waitForContainerToStart, waitForContainerToStop, stopContainer, ensureManagementScripts, } from '../utils/docker.js';
 import { env } from '../config/env.js';
 import { DockerRepository } from '../repositories/docker.repository.js';
 import { HttpError } from '../utils/httpError.js';
@@ -97,6 +97,12 @@ export class DockerService {
         if (!started) {
             throw new HttpError(500, `Container "${docker.name}" did not start. Ensure the compose file sets container_name to "${docker.name}"`);
         }
+        try {
+            await ensureManagementScripts(docker.name, docker.stopcommand ?? null);
+        }
+        catch (error) {
+            throw new HttpError(500, `Failed to prepare management scripts for "${docker.name}": ${error.message}`);
+        }
         const pid = await getContainerPid(docker.name);
         return DockerRepository.update(docker.id, {
             status: 'ACTIVE',
@@ -156,6 +162,22 @@ export class DockerService {
             description: `Usage ${stats.memoryUsageMb.toFixed(2)} MiB / ${stats.memoryLimitMb.toFixed(2)} MiB`,
         });
         return stats;
+    }
+    static async sendCommand(id, command) {
+        const docker = await DockerService.getDockerById(id);
+        const trimmed = command?.trim();
+        if (!trimmed) {
+            throw new HttpError(400, 'Command text is required');
+        }
+        const running = await isContainerRunning(docker.name);
+        if (!running) {
+            throw new HttpError(400, `Container "${docker.name}" is not running`);
+        }
+        const result = await sendCommandToContainer(docker.name, trimmed);
+        if (result.exitCode !== 0) {
+            throw new HttpError(500, `Command failed with exit code ${result.exitCode}: ${result.stderr || result.stdout}`);
+        }
+        return result;
     }
 }
 //# sourceMappingURL=docker.service.js.map

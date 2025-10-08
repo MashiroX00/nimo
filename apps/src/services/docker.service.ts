@@ -9,11 +9,13 @@ import {
   waitForContainerToStop,
   stopContainer,
   type ContainerStats,
+  ensureManagementScripts,
 } from '../utils/docker.js';
 import { env } from '../config/env.js';
 import { DockerRepository, type CreateDockerInput, type UpdateDockerInput } from '../repositories/docker.repository.js';
 import type { docker as DockerEntity } from '../../generated/prisma/index.js';
 import { HttpError } from '../utils/httpError.js';
+import type { CommandResult } from '../utils/command.js';
 
 export type CreateDockerDto = {
   name: string;
@@ -150,6 +152,15 @@ export class DockerService {
       );
     }
 
+    try {
+      await ensureManagementScripts(docker.name, docker.stopcommand ?? null);
+    } catch (error) {
+      throw new HttpError(
+        500,
+        `Failed to prepare management scripts for "${docker.name}": ${(error as Error).message}`,
+      );
+    }
+
     const pid = await getContainerPid(docker.name);
 
     return DockerRepository.update(docker.id, {
@@ -237,5 +248,28 @@ export class DockerService {
     });
 
     return stats;
+  }
+
+  static async sendCommand(id: string, command: string): Promise<CommandResult> {
+    const docker = await DockerService.getDockerById(id);
+    const trimmed = command?.trim();
+    if (!trimmed) {
+      throw new HttpError(400, 'Command text is required');
+    }
+
+    const running = await isContainerRunning(docker.name);
+    if (!running) {
+      throw new HttpError(400, `Container "${docker.name}" is not running`);
+    }
+
+    const result = await sendCommandToContainer(docker.name, trimmed);
+    if (result.exitCode !== 0) {
+      throw new HttpError(
+        500,
+        `Command failed with exit code ${result.exitCode}: ${result.stderr || result.stdout}`,
+      );
+    }
+
+    return result;
   }
 }

@@ -1,6 +1,7 @@
 import { type ContainerStats } from '../utils/docker.js';
 import { type UpdateDockerInput } from '../repositories/docker.repository.js';
 import type { docker as DockerEntity } from '../../generated/prisma/index.js';
+import type { CommandResult } from '../utils/command.js';
 export type CreateDockerDto = {
     name: string;
     type?: string | null;
@@ -29,5 +30,6 @@ export declare class DockerService {
         build?: boolean;
     }): Promise<DockerEntity>;
     static updateStats(docker: DockerEntity): Promise<ContainerStats | null>;
+    static sendCommand(id: string, command: string): Promise<CommandResult>;
 }
 //# sourceMappingURL=docker.service.d.ts.map

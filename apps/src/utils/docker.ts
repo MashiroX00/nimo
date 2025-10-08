@@ -227,3 +227,74 @@ export const stopContainer = async (containerName: string): Promise<CommandResul
   const args = ['stop', '--time', String(env.dockerStopTimeoutSec), containerName];
   return execDocker(args);
 };
+
+const writeFileToContainer = async (
+  containerName: string,
+  filePath: string,
+  content: string,
+): Promise<CommandResult> => {
+  const dir = path.posix.dirname(filePath);
+  const shellScript = [
+    `mkdir -p '${dir}'`,
+    `cat <<'EOF' > '${filePath}'`,
+    content,
+    'EOF',
+    `chmod +x '${filePath}'`,
+  ].join('\n');
+
+  return execDocker(['exec', containerName, 'sh', '-c', shellScript]);
+};
+
+export const ensureManagementScripts = async (
+  containerName: string,
+  stopCommand?: string | null,
+): Promise<void> => {
+  const toolsDir = '/docker-tools';
+  const stopScriptPath = `${toolsDir}/stop.sh`;
+  const runScriptPath = `${toolsDir}/command.sh`;
+
+  const defaultStop = (stopCommand ?? '').trim();
+  const stopScript = `#!/bin/sh
+set -eo pipefail
+
+DEFAULT_COMMAND=${JSON.stringify(defaultStop)}
+CMD="$DEFAULT_COMMAND"
+
+if [ "$#" -gt 0 ]; then
+  CMD="$*"
+fi
+
+if [ -z "$CMD" ]; then
+  echo "No stop command configured" >&2
+  exit 1
+fi
+
+printf '%s\\n' "$CMD" > /proc/1/fd/0
+`;
+
+  const runScript = `#!/bin/sh
+set -eo pipefail
+
+if [ "$#" -eq 0 ]; then
+  echo "Usage: $0 <command...>" >&2
+  exit 1
+fi
+
+CMD="$*"
+printf '%s\\n' "$CMD" > /proc/1/fd/0
+`;
+
+  const stopResult = await writeFileToContainer(containerName, stopScriptPath, stopScript);
+  if (stopResult.exitCode !== 0) {
+    throw new Error(
+      `Failed to write stop script: ${stopResult.stderr || stopResult.stdout || 'unknown error'}`,
+    );
+  }
+
+  const runResult = await writeFileToContainer(containerName, runScriptPath, runScript);
+  if (runResult.exitCode !== 0) {
+    throw new Error(
+      `Failed to write command script: ${runResult.stderr || runResult.stdout || 'unknown error'}`,
+    );
+  }
+};
