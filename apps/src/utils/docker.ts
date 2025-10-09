@@ -232,9 +232,73 @@ export const tailContainerLogs = (
   return child;
 };
 
-export const stopContainer = async (containerName: string): Promise<CommandResult> => {
-  const args = ['stop', '--time', String(env.dockerStopTimeoutSec), containerName];
+export const execRconCommand = async (
+  containerName: string,
+  commandText: string,
+): Promise<CommandResult> => {
+  const trimmed = commandText.trim();
+  if (!trimmed) {
+    throw new Error('Empty RCON command provided');
+  }
+
+  const tokens = splitCommand(trimmed);
+  const args = ['exec', '-i', containerName, 'rcon-cli', tokens.command, ...tokens.args];
+
+  log.debug('Executing rcon-cli command', { containerName, command: trimmed });
   return execDocker(args);
+};
+
+export type StopContainerOptions = {
+  stopCommand?: string | null;
+};
+
+export const stopContainer = async (
+  containerName: string,
+  options: StopContainerOptions = {},
+): Promise<CommandResult> => {
+  const { stopCommand } = options;
+  const gracefulCommand = stopCommand?.trim() || 'stop';
+  let gracefulResult: CommandResult | null = null;
+
+  try {
+    log.debug('Attempting graceful stop via rcon-cli', {
+      containerName,
+      command: gracefulCommand,
+    });
+
+    gracefulResult = await execRconCommand(containerName, gracefulCommand);
+    if (gracefulResult.exitCode === 0) {
+      log.info('Graceful stop command executed successfully', { containerName });
+      return gracefulResult;
+    }
+
+    log.warn('Graceful stop command failed, falling back to docker stop', {
+      containerName,
+      exitCode: gracefulResult.exitCode,
+      stderr: gracefulResult.stderr,
+      stdout: gracefulResult.stdout,
+    });
+  } catch (error) {
+    log.warn('Graceful stop command threw an error, falling back to docker stop', {
+      containerName,
+      error: (error as Error).message,
+    });
+  }
+
+  const args = ['stop', '--time', String(env.dockerStopTimeoutSec), containerName];
+  const forceResult = await execDocker(args);
+  if (forceResult.exitCode === 0) {
+    log.info('docker stop succeeded after graceful stop failure', { containerName });
+  } else {
+    log.error('docker stop failed', {
+      containerName,
+      exitCode: forceResult.exitCode,
+      stderr: forceResult.stderr,
+      stdout: forceResult.stdout,
+    });
+  }
+
+  return forceResult;
 };
 
 const writeFileToContainer = async (
@@ -267,31 +331,9 @@ const writeFileToContainer = async (
 
 export const ensureManagementScripts = async (
   containerName: string,
-  stopCommand?: string | null,
 ): Promise<void> => {
   const toolsDir = '/docker-tools';
-  const stopScriptPath = `${toolsDir}/stop.sh`;
   const runScriptPath = `${toolsDir}/command.sh`;
-
-  const defaultStop = (stopCommand ?? '').trim();
-  const stopScript = `#!/bin/sh
-set -eu
-
-DEFAULT_COMMAND=${JSON.stringify(defaultStop)}
-CMD="$DEFAULT_COMMAND"
-
-if [ "$#" -gt 0 ]; then
-  CMD="$*"
-fi
-
-if [ -z "$CMD" ]; then
-  echo "No stop command configured" >&2
-  exit 1
-fi
-
-printf '%s\\n' "$CMD" > /proc/1/fd/0
-printf '\\n' > /proc/1/fd/0
-`;
 
   const runScript = `#!/bin/sh
 set -eu
@@ -302,17 +344,10 @@ if [ "$#" -eq 0 ]; then
 fi
 
 CMD="$*"
-printf '%s\\n' "$CMD" > /proc/1/fd/0
-printf '\\n' > /proc/1/fd/0
+printf '%s\n' "$CMD" > /proc/1/fd/0
+printf '\n' > /proc/1/fd/0
 `;
 
-  const stopResult = await writeFileToContainer(containerName, stopScriptPath, stopScript);
-  if (stopResult.exitCode !== 0) {
-    throw new Error(
-      `Failed to write stop script: ${stopResult.stderr || stopResult.stdout || 'unknown error'}`,
-    );
-  }
-  log.debug('Stop script ensured', { containerName, stopScriptPath });
   const runResult = await writeFileToContainer(containerName, runScriptPath, runScript);
   if (runResult.exitCode !== 0) {
     throw new Error(
@@ -321,7 +356,6 @@ printf '\\n' > /proc/1/fd/0
   }
   log.debug('Command script ensured', { containerName, runScriptPath });
 };
-
 export const executeContainerScript = async (
   containerName: string,
   scriptName: string,

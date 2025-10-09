@@ -7,9 +7,9 @@ import {
   waitForContainerToStart,
   waitForContainerToStop,
   stopContainer,
+  execRconCommand,
   type ContainerStats,
   ensureManagementScripts,
-  executeContainerScript,
 } from '../utils/docker.js';
 import { env } from '../config/env.js';
 import { DockerRepository, type CreateDockerInput, type UpdateDockerInput } from '../repositories/docker.repository.js';
@@ -177,7 +177,7 @@ export class DockerService {
     }
 
     try {
-      await ensureManagementScripts(docker.name, docker.stopcommand ?? null);
+      await ensureManagementScripts(docker.name);
       log.debug('Prepared management scripts', { name: docker.name });
     } catch (error) {
       log.error('Failed to prepare management scripts', {
@@ -210,41 +210,21 @@ export class DockerService {
 
     await DockerRepository.update(docker.id, { status: 'PENDING' });
 
-    let gracefulStop = false;
-    try {
-      const scriptResult = await executeContainerScript(docker.name, 'stop.sh');
-      if (scriptResult.exitCode !== 0) {
-        log.warn('stop.sh returned non-zero exit code', {
-          name: docker.name,
-          exitCode: scriptResult.exitCode,
-          stderr: scriptResult.stderr,
-          stdout: scriptResult.stdout,
-        });
-      } else {
-        gracefulStop = await waitForContainerToStop(docker.name);
-      }
-    } catch (error) {
-      log.warn('stop.sh execution failed', { name: docker.name, error: (error as Error).message });
-    }
-
-    let stopped = gracefulStop;
-
-    if (!gracefulStop) {
-      log.warn('Falling back to docker stop', { name: docker.name });
-      const stopResult = await stopContainer(docker.name);
-      if (stopResult.exitCode !== 0) {
-        throw new HttpError(
-          500,
-          `Container "${docker.name}" did not respond to stop command and docker stop failed: ${stopResult.stderr || stopResult.stdout}`,
-        );
-      }
-
-      stopped = await waitForContainerToStop(
-        docker.name,
-        env.dockerStopTimeoutSec * 1000,
-        1_000,
+    const stopResult = await stopContainer(docker.name, {
+      stopCommand: docker.stopcommand ?? null,
+    });
+    if (stopResult.exitCode !== 0) {
+      throw new HttpError(
+        500,
+        `Failed to stop docker "${docker.name}": ${stopResult.stderr || stopResult.stdout}`,
       );
     }
+
+    const stopped = await waitForContainerToStop(
+      docker.name,
+      env.dockerStopTimeoutSec * 1000,
+      1_000,
+    );
 
     if (!stopped) {
       throw new HttpError(500, `Container "${docker.name}" did not stop within the timeout window`);
@@ -298,12 +278,41 @@ export class DockerService {
       throw new HttpError(400, `Container "${docker.name}" is not running`);
     }
 
-    log.info('Executing command script', { id, name: docker.name });
-    const result = await executeContainerScript(docker.name, 'command.sh', command?.trim());
-    if (result.exitCode !== 0) {
+    const trimmedCommand = command?.trim();
+    if (!trimmedCommand) {
+      throw new HttpError(400, 'Command text is required');
+    }
+
+    log.info('Executing RCON command', { id, name: docker.name, command: trimmedCommand });
+
+    let result: Awaited<ReturnType<typeof execRconCommand>>;
+    try {
+      result = await execRconCommand(docker.name, trimmedCommand);
+    } catch (error) {
+      log.error('RCON command execution threw an error', {
+        id,
+        name: docker.name,
+        command: trimmedCommand,
+        error: (error as Error).message,
+      });
       throw new HttpError(
         500,
-        `Command script failed with exit code ${result.exitCode}: ${result.stderr || result.stdout}`,
+        `Failed to execute command "${trimmedCommand}": ${(error as Error).message}`,
+      );
+    }
+
+    if (result.exitCode !== 0) {
+      log.error('RCON command returned non-zero exit code', {
+        id,
+        name: docker.name,
+        command: trimmedCommand,
+        exitCode: result.exitCode,
+        stderr: result.stderr,
+        stdout: result.stdout,
+      });
+      throw new HttpError(
+        500,
+        `Command "${trimmedCommand}" failed with exit code ${result.exitCode}: ${result.stderr || result.stdout}`,
       );
     }
 
