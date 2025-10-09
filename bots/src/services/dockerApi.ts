@@ -16,6 +16,8 @@ export interface Docker {
   dockercompose?: string | null;
   dockerlocation?: string | null;
   description?: string | null;
+  rconport?: number | null;
+  rconpassword?: string | null;
   createdAt: string;
   updatedAt: string;
 }

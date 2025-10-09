@@ -34,6 +34,7 @@ DOCKER_API_BASE_URL=http://localhost:4000/api
 # Optional: bearer token header
 # DOCKER_API_KEY=your_api_key
 ```
+> RCON: Docker entries must have `rconport` and `rconpassword` configured for stop/command actions to work.
 
 ## Usage
 

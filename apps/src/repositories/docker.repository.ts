@@ -9,7 +9,10 @@ import { prisma } from '../config/prisma.js';
 export type CreateDockerInput = Omit<
   Prisma.dockerCreateInput,
   'servermonitors' | 'id' | 'createdAt' | 'updatedAt'
->;
+> & {
+  rconport?: number | null;
+  rconpassword?: string | null;
+};
 
 export type UpdateDockerInput = Partial<CreateDockerInput> & {
   status?: status | null;

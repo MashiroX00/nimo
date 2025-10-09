@@ -56,6 +56,18 @@ export const createDockerEmbed = (docker: Docker, monitor?: DockerMonitor | null
     },
   ];
 
+
+  if (docker.rconport != null) {
+    fields.push({
+      name: 'RCON',
+      value: `Port: ${docker.rconport}
+Password: ${docker.rconpassword ? 'set' : 'not set'}`,
+      inline: true,
+    });
+  } else {
+    fields.push({ name: 'RCON', value: 'Not configured', inline: true });
+  }
+
   if (monitor) {
     fields.push({
       name: 'CPU',

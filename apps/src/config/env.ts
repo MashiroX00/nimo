@@ -18,6 +18,8 @@ export const env = {
   dockerComposeCommand: process.env.DOCKER_COMPOSE_COMMAND ?? 'docker compose',
   wsPrefix: process.env.DOCKER_LOG_WS_PREFIX ?? '/ws',
   dockerStopTimeoutSec: toNumber(process.env.DOCKER_STOP_TIMEOUT_SEC, 30),
+  rconCli: process.env.MCRCON_CLI ?? 'mcrcon',
+  rconHost: process.env.MCRCON_HOST ?? '127.0.0.1',
 };
 
 export const isProduction = env.nodeEnv === 'production';

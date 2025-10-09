@@ -7,10 +7,9 @@ import {
   waitForContainerToStart,
   waitForContainerToStop,
   stopContainer,
-  execRconCommand,
   type ContainerStats,
-  ensureManagementScripts,
 } from '../utils/docker.js';
+import { runRconCommand } from '../utils/rcon.js';
 import { env } from '../config/env.js';
 import { DockerRepository, type CreateDockerInput, type UpdateDockerInput } from '../repositories/docker.repository.js';
 import type { docker as DockerEntity } from '../../generated/prisma/index.js';
@@ -26,6 +25,8 @@ export type CreateDockerDto = {
   dockercompose?: string | null;
   dockerlocation?: string | null;
   description?: string | null;
+  rconport?: number | null;
+  rconpassword?: string | null;
 };
 
 export type UpdateDockerDto = Partial<CreateDockerDto> & {
@@ -39,6 +40,22 @@ const ensureDockerExists = (docker: DockerEntity | null, identifier: string): Do
   }
   return docker;
 };
+
+
+const getRconConfig = (docker: DockerEntity) => {
+  const { rconport, rconpassword } = docker as DockerWithRcon;
+
+  if (rconport == null || rconpassword == null || rconpassword.trim().length === 0) {
+    throw new HttpError(400, `Docker "${docker.name}" does not have RCON configured`);
+  }
+
+  return {
+    port: rconport,
+    password: rconpassword,
+  };
+};
+
+type DockerWithRcon = DockerEntity & { rconport: number | null; rconpassword: string | null };
 
 const log = createLogger('DockerService');
 
@@ -60,6 +77,8 @@ export class DockerService {
       dockercompose: input.dockercompose ?? null,
       dockerlocation: input.dockerlocation ?? null,
       description: input.description ?? null,
+      rconport: input.rconport ?? null,
+      rconpassword: input.rconpassword ?? null,
       status: 'INACTIVE',
       pid: null,
     };
@@ -108,6 +127,12 @@ export class DockerService {
     }
     if (Object.prototype.hasOwnProperty.call(input, 'description')) {
       data.description = input.description ?? null;
+    }
+    if (Object.prototype.hasOwnProperty.call(input, 'rconport')) {
+      data.rconport = input.rconport ?? null;
+    }
+    if (Object.prototype.hasOwnProperty.call(input, 'rconpassword')) {
+      data.rconpassword = input.rconpassword ?? null;
     }
     if (Object.prototype.hasOwnProperty.call(input, 'status') && input.status) {
       data.status = input.status;
@@ -176,20 +201,6 @@ export class DockerService {
       );
     }
 
-    try {
-      await ensureManagementScripts(docker.name);
-      log.debug('Prepared management scripts', { name: docker.name });
-    } catch (error) {
-      log.error('Failed to prepare management scripts', {
-        name: docker.name,
-        error: (error as Error).message,
-      });
-      throw new HttpError(
-        500,
-        `Failed to prepare management scripts for "${docker.name}": ${(error as Error).message}`,
-      );
-    }
-
     const pid = await getContainerPid(docker.name);
 
     const updated = await DockerRepository.update(docker.id, {
@@ -210,21 +221,50 @@ export class DockerService {
 
     await DockerRepository.update(docker.id, { status: 'PENDING' });
 
-    const stopResult = await stopContainer(docker.name, {
-      stopCommand: docker.stopcommand ?? null,
-    });
-    if (stopResult.exitCode !== 0) {
-      throw new HttpError(
-        500,
-        `Failed to stop docker "${docker.name}": ${stopResult.stderr || stopResult.stdout}`,
-      );
+    const { port, password } = getRconConfig(docker);
+    const stopCommand = docker.stopcommand?.trim() || 'stop';
+
+    let stopped = false;
+    try {
+      const rconResult = await runRconCommand({
+        host: env.rconHost,
+        port,
+        password,
+        command: stopCommand,
+      });
+
+      log.info('Sent RCON stop command', { name: docker.name, exitCode: rconResult.exitCode });
+
+      if (rconResult.exitCode === 0) {
+        stopped = await waitForContainerToStop(
+          docker.name,
+          env.dockerStopTimeoutSec * 1000,
+          1_000,
+        );
+      }
+    } catch (error) {
+      log.error('RCON stop command failed', {
+        name: docker.name,
+        error: (error as Error).message,
+      });
     }
 
-    const stopped = await waitForContainerToStop(
-      docker.name,
-      env.dockerStopTimeoutSec * 1000,
-      1_000,
-    );
+    if (!stopped) {
+      log.warn('RCON stop did not stop container, falling back to docker stop', { name: docker.name });
+      const stopResult = await stopContainer(docker.name);
+      if (stopResult.exitCode !== 0) {
+        throw new HttpError(
+          500,
+          `Failed to stop docker "${docker.name}": ${stopResult.stderr || stopResult.stdout}`,
+        );
+      }
+
+      stopped = await waitForContainerToStop(
+        docker.name,
+        env.dockerStopTimeoutSec * 1000,
+        1_000,
+      );
+    }
 
     if (!stopped) {
       throw new HttpError(500, `Container "${docker.name}" did not stop within the timeout window`);
@@ -283,11 +323,18 @@ export class DockerService {
       throw new HttpError(400, 'Command text is required');
     }
 
+    const { port, password } = getRconConfig(docker);
+
     log.info('Executing RCON command', { id, name: docker.name, command: trimmedCommand });
 
-    let result: Awaited<ReturnType<typeof execRconCommand>>;
+    let result: Awaited<ReturnType<typeof runRconCommand>>;
     try {
-      result = await execRconCommand(docker.name, trimmedCommand);
+      result = await runRconCommand({
+        host: env.rconHost,
+        port,
+        password,
+        command: trimmedCommand,
+      });
     } catch (error) {
       log.error('RCON command execution threw an error', {
         id,
@@ -318,4 +365,5 @@ export class DockerService {
 
     return result;
   }
+
 }

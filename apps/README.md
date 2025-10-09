@@ -6,12 +6,12 @@ Backend service for orchestrating docker-compose workloads with Prisma persisten
 
 - CRUD endpoints for docker metadata stored in MySQL via Prisma.
 - Run `docker compose up`/`down` for a saved project path and optional compose file.
-- Graceful shutdown by piping the stored stop command into container STDIN before running `docker compose down`.
+- Graceful shutdown via RCON stop command with fallback to `docker stop`.
 - Background poller that records CPU and memory usage into the `servermonitor` table.
 - WebSocket streaming for container logs at `ws://<host>:<port>/<prefix>/<docker-name>`.
 - Auto generated OpenAPI docs served at `/docs` (powered by swagger-ui).
 - Configurable via `.env`, including CLI overrides and polling interval.
-- Automatically provisions helper scripts (`/docker-tools/stop.sh`, `/docker-tools/command.sh`) inside each container when it starts for manual control.
+- Sends management commands via RCON (`mcrcon`) when configured, including manual `/command` endpoint support.
 
 ## Requirements
 
@@ -19,6 +19,7 @@ Backend service for orchestrating docker-compose workloads with Prisma persisten
 - npm
 - Docker Engine and Docker Compose (v2)
 - MySQL database reachable via `DATABASE_URL`
+- [mcrcon](https://github.com/Tiiffi/mcrcon) CLI available on the host (configurable via `MCRCON_CLI`)
 
 ## Installation
 
@@ -48,6 +49,8 @@ Define the following in `.env`:
 | `DOCKER_LOG_WS_PREFIX` | WebSocket base path for logs | `/ws` |
 | `DOCKER_STOP_TIMEOUT_SEC` | Seconds Docker waits before force-killing on fallback `docker stop` | `30` |
 | `LOG_LEVEL` | Log verbosity (`debug`, `info`, `warn`, `error`) | `info` |
+| `MCRCON_CLI` | Path to the `mcrcon` executable | `mcrcon` |
+| `MCRCON_HOST` | Hostname used when issuing RCON commands | `127.0.0.1` |
 
 ## Running the Service
 
@@ -75,7 +78,7 @@ The service listens on `http://localhost:PORT`. Swagger UI is available at `http
 - `PUT /api/dockers/:id` – update metadata.
 - `DELETE /api/dockers/:id` – remove entry (must not be running).
 - `POST /api/dockers/:id/start` - run compose (`{ "build": true }` optional).
-- `POST /api/dockers/:id/stop` - pipe stored stop command to STDIN and tear down compose.
+- `POST /api/dockers/:id/stop` - issue the stored stop command via RCON and tear down compose.
 - `POST /api/dockers/:id/restart` - convenience wrapper for stop + start.
 - `POST /api/dockers/:id/command` - send a raw command string to the container STDIN.
 - `GET /api/dockers/:id/stats` - latest metrics snapshot.

@@ -36,6 +36,8 @@ const swaggerDefinition = {
           dockercompose: { type: 'string', nullable: true },
           dockerlocation: { type: 'string', nullable: true },
           description: { type: 'string', nullable: true },
+          rconport: { type: 'integer', nullable: true },
+          rconpassword: { type: 'string', nullable: true },
           createdAt: { type: 'string', format: 'date-time' },
           updatedAt: { type: 'string', format: 'date-time' },
         },
@@ -52,6 +54,8 @@ const swaggerDefinition = {
           dockercompose: { type: 'string' },
           dockerlocation: { type: 'string' },
           description: { type: 'string' },
+          rconport: { type: 'integer' },
+          rconpassword: { type: 'string' },
         },
       },
       DockerUpdatePayload: {
@@ -67,7 +71,7 @@ const swaggerDefinition = {
         type: 'object',
         required: ['command'],
         properties: {
-          command: { type: 'string', description: 'Command to send to container STDIN' },
+          command: { type: 'string', description: 'Command to send via RCON' },
         },
       },
       DockerCommandResult: {
@@ -244,7 +248,7 @@ const swaggerDefinition = {
     '/dockers/{id}/stop': {
       post: {
         tags: ['Docker'],
-        summary: 'Stop container by sending stdin command.',
+        summary: 'Stop container via RCON (uses stored stop command).',
         parameters: [
           { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
         ],
@@ -259,7 +263,7 @@ const swaggerDefinition = {
     '/dockers/{id}/command': {
       post: {
         tags: ['Docker'],
-        summary: 'Send a raw command to the container STDIN.',
+        summary: 'Send a raw RCON command to the container.',
         parameters: [
           { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
         ],
