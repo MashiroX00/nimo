@@ -6,6 +6,7 @@ import type {
 } from 'discord.js';
 import { dockerApi } from './dockerApi.js';
 import {
+  createCommandModal,
   createDockerActionRow,
   createDockerEmbed,
   createDockerSelectRow,
@@ -19,8 +20,8 @@ const parseActionCustomId = (customId: string) => {
 };
 
 const parseModalCustomId = (customId: string) => {
-  const [, , , dockerId, messageId] = customId.split(':');
-  return { dockerId, messageId };
+  const [, , modalType, dockerId, messageId] = customId.split(':');
+  return { modalType, dockerId, messageId };
 };
 
 const resolveTargetMessage = async (interaction: BaseInteraction) => {
@@ -85,6 +86,12 @@ export const handleDockerAction = async (interaction: ButtonInteraction) => {
     return;
   }
 
+  if (action === 'command') {
+    const modal = createCommandModal(dockerId, interaction.message.id);
+    await interaction.showModal(modal);
+    return;
+  }
+
   try {
     await interaction.deferUpdate();
 
@@ -131,3 +138,41 @@ export const handleDockerStopModal = async (interaction: ModalSubmitInteraction)
   }
 };
 
+export const handleDockerCommandModal = async (interaction: ModalSubmitInteraction) => {
+  const { dockerId } = parseModalCustomId(interaction.customId);
+  const command = interaction.fields.getTextInputValue('command').trim();
+
+  if (!command) {
+    await interaction.reply({
+      content: 'Command cannot be empty.',
+      ephemeral: true,
+    });
+    return;
+  }
+
+  try {
+    await interaction.deferReply({ ephemeral: true });
+    const result = await dockerApi.sendCommand(dockerId, command);
+
+    const pieces = [
+      `Command sent to docker.`,
+      `Exit code: ${result.exitCode ?? 'n/a'}`,
+    ];
+
+    if (result.stdout) {
+      pieces.push(`Output:\n\`\`\`\n${result.stdout.slice(0, 1800)}\n\`\`\``);
+    }
+
+    if (result.stderr) {
+      pieces.push(`Errors:\n\`\`\`\n${result.stderr.slice(0, 1800)}\n\`\`\``);
+    }
+
+    await interaction.editReply({ content: pieces.join('\n') });
+  } catch (error) {
+    await interaction.editReply({
+      content: `Failed to run command: ${(error as Error).message}`,
+    });
+  } finally {
+    await updateManageMessage(interaction, dockerId);
+  }
+};

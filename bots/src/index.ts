@@ -5,6 +5,7 @@ import { loadCommands } from './utils/commandLoader.js';
 import { registerCommands } from './utils/registerCommands.js';
 import {
   handleDockerAction,
+  handleDockerCommandModal,
   handleDockerSelect,
   handleDockerStopModal,
 } from './services/dockerInteractions.js';
@@ -48,8 +49,15 @@ const bootstrap = async () => {
         return;
       }
 
-      if (interaction.isModalSubmit() && interaction.customId.startsWith('docker:modal:stop:')) {
-        await handleDockerStopModal(interaction);
+      if (interaction.isModalSubmit() && interaction.customId.startsWith('docker:modal:')) {
+        if (interaction.customId.includes(':stop:')) {
+          await handleDockerStopModal(interaction);
+          return;
+        }
+        if (interaction.customId.includes(':command:')) {
+          await handleDockerCommandModal(interaction);
+          return;
+        }
       }
     } catch (error) {
       console.error('[interactionCreate] error', error);
@@ -71,4 +79,3 @@ bootstrap().catch((error) => {
   console.error('Failed to start Discord bot', error);
   process.exit(1);
 });
-

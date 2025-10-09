@@ -128,12 +128,23 @@ export const createDockerActionRow = (docker: Docker) => {
     .setStyle(ButtonStyle.Danger)
     .setDisabled(docker.status !== 'ACTIVE');
 
+  const commandButton = new ButtonBuilder()
+    .setCustomId(`docker:action:command:${docker.id}`)
+    .setLabel('Command')
+    .setStyle(ButtonStyle.Primary)
+    .setDisabled(docker.status !== 'ACTIVE');
+
   const refreshButton = new ButtonBuilder()
     .setCustomId(`docker:action:refresh:${docker.id}`)
     .setLabel('Refresh')
     .setStyle(ButtonStyle.Secondary);
 
-  return new ActionRowBuilder<ButtonBuilder>().addComponents(startButton, stopButton, refreshButton);
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    startButton,
+    stopButton,
+    commandButton,
+    refreshButton,
+  );
 };
 
 export const createStopModal = (dockerId: string, messageId: string) => {
@@ -149,4 +160,20 @@ export const createStopModal = (dockerId: string, messageId: string) => {
     .setCustomId(`docker:modal:stop:${dockerId}:${messageId}`)
     .setTitle('Stop Docker')
     .addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(reasonInput));
+};
+
+export const createCommandModal = (dockerId: string, messageId: string) => {
+  const commandInput = new TextInputBuilder()
+    .setCustomId('command')
+    .setLabel('Command to run')
+    .setStyle(TextInputStyle.Short)
+    .setMinLength(1)
+    .setMaxLength(200)
+    .setPlaceholder('e.g. say Server restarting in 5 minutes')
+    .setRequired(true);
+
+  return new ModalBuilder()
+    .setCustomId(`docker:modal:command:${dockerId}:${messageId}`)
+    .setTitle('Send RCON Command')
+    .addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(commandInput));
 };
